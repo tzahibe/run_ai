@@ -89,9 +89,20 @@ export class Net {
         // Jitter reorders packets, so a lobby update can land AFTER the match
         // has started. Letting it set the state would quietly drop this player
         // out of a race that is already running.
-        if (this.state === 'lobby' || this.state === 'queued') { this.state = 'queued'; this.h.onQueued?.(m); }
+        if (this.state !== 'racing') { this.state = 'queued'; this.h.onQueued?.(m); }
         break;
       case 'net': this.stats.loss = m.loss; this.h.onNet?.(m); break;
+      case 'room': if (this.state !== 'racing') this.state = 'room'; this.h.onRoom?.(m); break;
+      case 'rooms': if (this.state !== 'racing') this.state = 'lobby'; this.h.onRooms?.(m); break;
+      case 'who': this.h.onWho?.(m); break;
+      case 'chat': this.h.onChat?.(m); break;
+      case 'chatlog': this.h.onChatLog?.(m); break;
+      case 'err': this.h.onErr?.(m); break;
+      case 'kicked': this.state = 'lobby'; this.h.onKicked?.(m); break;
+      case 'go': this.state = 'racing'; this.h.onGo?.(m); break;
+      case 'leftroom': this.h.onLeftRoom?.(m); break;
+      case 'botoffer': this.h.onBotOffer?.(m); break;
+      case 'authed': this.h.onAuthed?.(m); break;
       case 'match': if (this.state !== 'racing' || m.room !== this.roomId) this._onMatch(m); break;
       case 'snap': this._onSnap(m); break;
       case 'end': this.state = 'over'; this.h.onEnd?.(m); break;
@@ -108,10 +119,16 @@ export class Net {
       this.players.set(pl.id, p);
       if (pl.id === this.id) this.me = p;
     }
+    // A new race restarts the server's tick counter, so every leftover from the
+    // last one has to go. Keeping _lastSnapK meant the stale-snapshot filter
+    // rejected every snapshot of the new race, and the player saw nobody else.
     this.seq = 0; this.pending = []; this.snaps = []; this.time = -C.COUNTDOWN_SEC;
+    this._lastSnapK = -1; this._bufAvg = null;
+    this.visualDX = 0; this.visualDY = 0;
+    this.stats.drops = 0; this.stats.corr = 0; this.stats.corrClean = 0;
     this.entities = { mines: [], holes: [], shots: [] };
     this.roomId = m.room;
-    this.state = 'racing';
+    this.state = m.loading ? 'loading' : 'racing';
     this.h.onMatch?.(m);
   }
 
@@ -210,6 +227,16 @@ export class Net {
       this.stats.inKbps = Math.round(this._bytes * 8 / 1024 / ((nowMs - this._bytesAt) / 1000));
       this._bytes = 0; this._bytesAt = nowMs;
     }
+  }
+
+  /** Throw away stale local state and take the server's word for it. */
+  resync() {
+    this.pending.length = 0;
+    this.snaps.length = 0;
+    this._lastSnapK = -1;
+    this.visualDX = 0; this.visualDY = 0;
+    this._bufAvg = null;
+    this.stats.corr = 0; this.stats.corrClean = 0;
   }
 
   /** Remote racers, rendered INTERP_DELAY ms in the past. */

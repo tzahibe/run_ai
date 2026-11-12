@@ -1,0 +1,30 @@
+# fly launch --no-deploy   (then edit app/primary_region), then: fly deploy
+app = "turbofun"
+# Pick the region nearest your players — this is latency, not a detail.
+# fra = Frankfurt, ams = Amsterdam, cdg = Paris, iad = Virginia, sin = Singapore.
+primary_region = "fra"
+
+[build]
+
+[env]
+  PORT = "8080"
+  TRUST_PROXY = "1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false      # a race must not be suspended mid-run
+  auto_start_machines = true
+  min_machines_running = 1        # keep one warm: cold starts drop sockets
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

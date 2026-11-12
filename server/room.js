@@ -5,10 +5,14 @@
 
 import * as C from '../shared/constants.js';
 import { buildTrack, groundAt, lowerBound } from '../shared/track.js';
-import { createPlayer, stepPlayer, encodePlayer, hit } from '../shared/sim.js';
+import { createPlayer, stepPlayer, encodePlayer, hit, atkOf } from '../shared/sim.js';
 import { createBot, botInput } from './bot.js';
 
 let nextEnt = 1;
+
+// Racers pass through one another, so a tight grid is fair: eight of them
+// spread over 46px each would hand the back row a 320px handicap.
+const startX = slot => -210 + slot * 22;
 
 export class Room {
   constructor(id, trackIdx, seed, onFinished) {
@@ -32,7 +36,7 @@ export class Room {
 
   addHuman(conn, name, charIdx) {
     const slot = this.players.length;
-    const p = createPlayer(conn.id, slot, charIdx, -200 + slot * 46);
+    const p = createPlayer(conn.id, slot, charIdx, startX(slot));
     const e = { p, conn, bot: null, name, inputs: new Map(), nextSeq: 0, lastBits: 0, hist: [] };
     this.players.push(e);
     conn.room = this; conn.entry = e;
@@ -41,7 +45,7 @@ export class Room {
   addBot(charIdx, skill) {
     const slot = this.players.length;
     const id = 'bot' + slot + '_' + this.id;
-    const p = createPlayer(id, slot, charIdx, -200 + slot * 46);
+    const p = createPlayer(id, slot, charIdx, startX(slot));
     const e = { p, conn: null, bot: createBot(skill), name: C.CHARS[charIdx].name + ' (bot)', inputs: new Map(), nextSeq: 0, lastBits: 0, hist: [] };
     this.players.push(e);
     return e;
@@ -143,33 +147,37 @@ export class Room {
     // Rewind everyone else to where the attacker SAW them, bounded.
     const backMs = Math.min(C.MAX_REWIND_MS, (att.conn ? att.conn.rttMs : 0) / 2);
     const backTicks = Math.round(backMs / 1000 * C.TICK_HZ);
+    const A = atkOf(att.p);
     let target = null, bd = 1e9;
     for (const e of this.players) {
       if (e === att || e.p.done) continue;
       const q = this.posAt(e, backTicks);
       const dx = q.x - att.p.x;
-      if (dx > C.ATK_FWD || dx < -C.ATK_BACK) continue;
+      if (dx > A.fwd || dx < -A.back) continue;
       if (Math.abs(q.y - att.p.y) > 48) continue;
       const ad = Math.abs(dx); if (ad < bd) { bd = ad; target = e; }
     }
     const fx = att.p.x + (att.p.atkKind ? 30 : 28), fy = att.p.y + (att.p.atkKind ? 12 : 26);
     if (!target) { this.events.push({ k: 'miss', x: fx, y: fy, by: att.p.id }); return; }
     const away = target.p.x >= att.p.x ? 1 : -1;
-    const landed = hit(target.p, 0.42, 0.32);
+    const landed = hit(target.p, A.stun, A.slow);
     if (landed) {
-      target.p.x += away * 14; target.p.vx *= 0.34;
-      if (att.p.atkKind) target.p.vy = Math.max(target.p.vy, 250);
+      target.p.x += away * A.kb; target.p.vx *= 0.34;
+      target.p.vy = Math.max(target.p.vy, A.pop * (att.p.atkKind ? 1 : 0.6));
     }
-    this.events.push({ k: 'melee', x: fx, y: fy, by: att.p.id, to: target.p.id, landed, rewind: backTicks });
+    this.events.push({ k: 'melee', x: fx, y: fy, by: att.p.id, to: target.p.id, landed, name: A.name, rewind: backTicks });
   }
 
   placeOf(p) { let n = 1; for (const e of this.players) { const o = e.p; if (o !== p && (o.done ? o.x + 1e6 : o.x) > (p.done ? p.x + 1e6 : p.x)) n++; } return n; }
 
   giveItem(e) {
     const pos = this.placeOf(e.p);
-    const pool = pos >= 3 ? ['rocket','boost','freeze','jet','nade','punch','rocket','boost']
-               : pos === 2 ? ['nade','boost','punch','rocket','trap','freeze','jet','shield']
-                           : ['shield','hole','trap','nade','shield','hole','boost','punch'];
+    // Tiers are relative so the table works for two racers or eight: the front
+    // of the field gets area denial, the back gets the things that hurt.
+    const n = this.players.length, f = (pos - 1) / Math.max(1, n - 1);
+    const pool = f > 0.6 ? ['rocket','boost','freeze','jet','nade','punch','rocket','boost']
+               : f > 0.3 ? ['nade','boost','punch','rocket','trap','freeze','jet','shield']
+                         : ['shield','hole','trap','nade','shield','hole','boost','punch'];
     const id = pool[Math.floor(Math.random() * pool.length)];
     e.p.item = C.ITEMS.findIndex(i => i.id === id);
   }
@@ -213,7 +221,13 @@ export class Room {
           const dy = Math.abs(itm.y - (p.y + h * 0.5));
           if (Math.abs(itm.x - p.x) < 28 && dy < 44) {
             itm.got = itm.got || new Set();
-            if (!itm.got.has(p.id)) { itm.got.add(p.id); p.coins++; this.events.push({ k: 'coin', x: itm.x, y: itm.y, to: p.id, idx: itm.idx }); }
+            if (!itm.got.has(p.id)) {
+              itm.got.add(p.id); p.coins++; p.meter++;
+              let turbo = false;
+              if (p.meter >= C.COINS_PER_TURBO) { p.meter -= C.COINS_PER_TURBO; p.boost = Math.max(p.boost, C.TURBO_SEC); turbo = true; }
+              this.events.push({ k: 'coin', x: itm.x, y: itm.y, to: p.id, idx: itm.idx,
+                left: C.COINS_PER_TURBO - p.meter, turbo });
+            }
           }
         } else if (Math.abs(itm.x - p.x) < C.HW + 23 && itm.y > p.y - 32 && itm.y < p.y + h + 30) {
           itm.taken = itm.taken || new Set();

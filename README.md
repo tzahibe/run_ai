@@ -12,10 +12,61 @@ npm run dev               # everyone starts on an 80 ms / 25 ms / 1.5% link
 npm run bad               # 220 ms / 70 ms / 6% — worst case
 ```
 
-Open the page in two or more browser tabs and press **Find match** in each.
-The queue waits 5 s for other humans, then fills the grid with bots. Controls:
-`Space`/`↑` jump (twice = double jump), `↓` slide, `E` use item, `F` punch on
-the ground or kick in the air.
+Open the page in two or more browser tabs. Each one starts at an **entry
+screen**: pick a racer, type a name, and enter — or sign in with Google if the
+server is configured for it. Then either press **Find match** (quick queue:
+waits 5 s for other humans, fills the rest with bots) or **Create room**.
+
+Controls: `Space`/`↑` jump (twice = double jump), `↓` slide, `E` use item,
+`F` punch on the ground or kick in the air.
+
+### Rooms
+
+A room is a private grid with a 4-character code you can share.
+
+- The **host** owns the room: only they pick the track, add or remove bots, and
+  press Start. If the host leaves, the next player inherits the room.
+- **Start stays locked until every other player has pressed Ready.** Bots count
+  as ready. The hint under the button names whoever is still missing.
+- A room can carry an optional **password**. Protected rooms show as `locked`
+  in the browser; the password itself never leaves the server, and a wrong one
+  is refused without revealing anything.
+- The **lobby** is a browser: a narrow column lists everyone online and where
+  they are, and the main area shows every open room as a card — code, track,
+  how many of the four seats are taken, who is in it, and a padlock when the
+  room is protected.
+- **Chat belongs to the room**, not to the server: only the people in it see
+  it. Joining and leaving are announced there (`Dana joined`), along with the
+  host changing hands and each race's result. The last 60 lines load when you
+  join; the server rate-limits to 8 messages per 10 s.
+- **Once a race starts the game takes the whole window** and the page stops
+  scrolling. Press `T` for a corner readout of RTT, loss and correction.
+- After a race the room stays together so you can run it again, with everyone's
+  Ready cleared. A player who then goes **silent for a minute is returned to the
+  lobby**, so an empty chair cannot hold the room hostage. Rooms that have not
+  raced yet never time anyone out, so you can open one and wait for a friend.
+
+### Google sign-in (optional)
+
+Guests can play without an account; signing in only fixes your display name
+across visits and marks you as verified in the player lists. To turn it on:
+
+1. In the Google Cloud console create an **OAuth 2.0 Client ID** of type *Web
+   application*.
+2. Add your origin to **Authorized JavaScript origins** — `http://localhost:8080`
+   for local play, plus your real domain later.
+3. Start the server with the ID (it is public by design, not a secret):
+
+```bash
+node server/index.js --google-client-id 1234567890-abc.apps.googleusercontent.com
+# or: GOOGLE_CLIENT_ID=... npm start
+```
+
+The browser receives an ID token from Google and sends it to the server, which
+verifies the RS256 signature against Google's published keys and checks the
+audience, issuer and expiry before believing a single field in it. An
+unverified token is never trusted, and signing in on a second tab disconnects
+the first so one account cannot race twice.
 
 ## How it is put together
 
@@ -23,7 +74,8 @@ the ground or kick in the air.
 shared/     constants.js   tuning numbers, input bits, tracks, characters, items
             track.js       deterministic track generation + surface queries
             sim.js         THE simulation — one fixed step for one racer
-server/     index.js       static host, WebSocket, matchmaking, 60 Hz loop
+server/     index.js       static host, WebSocket, lobby/rooms/chat, 60 Hz loop
+            google.js      Google ID token verification (signature, audience, expiry)
             room.js        one race: authority over pickups, items, hits, entities
             bot.js         bots, which only ever produce input bits
             netsim.js      per-connection latency / jitter / loss
@@ -129,8 +181,10 @@ have surfaced by playing on localhost:
 - **No cheat validation beyond authority.** The server trusts input timing. A
   client that floods inputs gets throttled by the per-tick consumption, but
   input-rate and plausibility checks belong here.
-- **Matchmaking is a single queue.** No skill rating, no regions, no reconnect
-  into a running race (a dropped player is handed to a bot and cannot return).
+- **No skill rating or regions**, and no reconnect into a running race: a
+  dropped player is handed to a bot and cannot return.
+- **Accounts are display names only.** Signing in does not yet carry progress,
+  coins or unlocks, because nothing is persisted.
 - **One process, in-memory rooms.** No horizontal scaling, no persistence, no
   accounts, no anti-abuse. Rooms are lost on restart.
 - **No tick-rate adaptation** for clients whose device cannot hold 60 Hz.

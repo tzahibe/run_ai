@@ -15,6 +15,7 @@ export function runClient({ url, name, charIdx, trackIdx, net: cond, skill = 0.8
       if (cond) n.send({ t: 'net', ...cond });
       n.send({ t: 'queue', trackIdx });
     },
+    onMatch(m) { if (m.loading) n.send({ t: 'loaded' }); },
     onEnd(m) {
       const mine = m.results.find(r => r.id === n.id);
       stats.finished = !!(mine && mine.done); stats.place = mine && mine.place; stats.time = mine ? mine.time : 0;

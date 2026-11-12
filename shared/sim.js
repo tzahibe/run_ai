@@ -14,6 +14,7 @@ export function createPlayer(id, slot, charIdx, startX) {
     onGround: true, jumps: 2, sliding: false, slideT: 0,
     stun: 0, frozen: 0, boost: 0, shield: 0, jet: 0, inv: 0,
     atk: 0, atkCd: 0, atkKind: 0,          // 0 = punch, 1 = kick
+    stam: 1, sprinting: false, meter: 0,
     item: -1, coins: 0,
     done: false, time: 0, phase: 0,
     safeX: startX, safeY: 0,
@@ -64,13 +65,18 @@ export function setSlide(p, on, track) {
   } else if (p.sliding && p.slideT < 0.42 && !ceilOver(track, p)) { p.sliding = false; p.slideT = 0; }
 }
 
+export const atkOf = p => (C.CHARS[p.charIdx] && C.CHARS[p.charIdx].atk) ||
+  { name: 'Hit', fwd: C.ATK_FWD, back: C.ATK_BACK, stun: .42, slow: .32, kb: 14, pop: 250, cost: .62 };
+
 // Starts the swing. Whether it CONNECTS is decided by the server only.
 export function meleeStart(p, raceTime) {
   if (p.done || p.sliding || p.stun > 0 || p.frozen > 0 || p.atkCd > 0) return false;
   if (raceTime < C.NO_CONTACT_SEC) return false;
+  const A = atkOf(p);
   p.atk = C.ATK_DUR; p.atkCd = C.ATK_CD;
   p.atkKind = p.onGround ? 0 : 1;
-  p.vx *= 0.62;
+  p.vx *= A.cost;                       // the rhino's charge speeds him up
+  if (A.hop && p.onGround) { p.vy = Math.max(p.vy, 210); p.onGround = false; p.jumps = 1; }
   return true;
 }
 
@@ -102,8 +108,15 @@ export function stepPlayer(p, bits, w, dt) {
   p.atkCd = Math.max(0, p.atkCd - dt);
   if (p.sliding) { p.slideT -= dt; if ((p.slideT <= 0 || !p.onGround) && !ceilOver(track, p)) p.sliding = false; }
 
+  // --- sprint ---
+  const wantRun = bit(bits, C.IN_RUN);
+  if (wantRun && p.stam > 0.04 && p.stun <= 0 && p.frozen <= 0 && !p.sliding) {
+    p.sprinting = true; p.stam = Math.max(0, p.stam - C.SPRINT_DRAIN * dt);
+  } else { p.sprinting = false; p.stam = Math.min(1, p.stam + C.SPRINT_REFILL * dt); }
+
   // --- horizontal ---
   let target = C.BASE;
+  if (p.sprinting) target *= C.SPRINT_MUL;
   if (p.atk > 0) target *= 0.55;
   if (p.boost > 0) target *= 1.62;
   if (p.sliding) target *= 1.08;
@@ -199,11 +212,12 @@ export function stepPlayer(p, bits, w, dt) {
 
 // --- state transfer -------------------------------------------------------
 // Compact wire form. Keys are short because this goes out 20x a second.
-const F = ['x','y','vx','vy','stun','frozen','boost','shield','jet','inv','atk','atkCd','phase','slideT','safeX','safeY','time'];
+const F = ['x','y','vx','vy','stun','frozen','boost','shield','jet','inv','atk','atkCd','phase','slideT','safeX','safeY','time','stam'];
 
 export function encodePlayer(p) {
   const o = { i: p.id, s: p.slot, c: p.charIdx, it: p.item, cn: p.coins,
-    f: (p.onGround ? 1 : 0) | (p.sliding ? 2 : 0) | (p.done ? 4 : 0) | (p.atkKind ? 8 : 0),
+    f: (p.onGround ? 1 : 0) | (p.sliding ? 2 : 0) | (p.done ? 4 : 0) | (p.atkKind ? 8 : 0) | (p.sprinting ? 16 : 0),
+    mt: p.meter,
     jm: p.jumps, lb: p.lastBits };
   for (const k of F) o[k] = Math.round(p[k] * 100) / 100;
   return o;
@@ -212,6 +226,7 @@ export function encodePlayer(p) {
 export function applyPlayer(p, o) {
   p.id = o.i; p.slot = o.s; p.charIdx = o.c; p.item = o.it; p.coins = o.cn;
   p.onGround = !!(o.f & 1); p.sliding = !!(o.f & 2); p.done = !!(o.f & 4); p.atkKind = (o.f & 8) ? 1 : 0;
+  p.sprinting = !!(o.f & 16); p.meter = o.mt;
   p.jumps = o.jm; p.lastBits = o.lb;
   for (const k of F) p[k] = o[k];
   return p;
