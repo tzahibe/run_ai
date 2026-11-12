@@ -24,14 +24,34 @@ export const SPRINT_MUL = 1.28, SPRINT_DRAIN = 1 / 2.3, SPRINT_REFILL = 1 / 3.4;
 // Coins are not decoration: every twelve is an automatic two-second turbo.
 export const COINS_PER_TURBO = 12, TURBO_SEC = 2.0;
 
+// Each track carries its own scenery kit: `theme` picks the props the renderer
+// scatters along the ground, `weather` the stuff falling out of the sky, and
+// `storm` arms the lightning.
 export const TRACKS = [
-  { id:'roofs',  name:'Candy Rooftops', len:11000, seed:1337,  diff:0.55, shape:'blob',
-    sky:['#ffd9ee','#9fe0ff'], ground:'#6b4bd6', top:'#a78bfa', far:'#ffffff', mid:'#7d5ad8', sun:'#fff3b8', void:'#3a2a63' },
-  { id:'sewer',  name:'Neon Sewer',     len:15000, seed:90210, diff:0.78, shape:'arch',
-    sky:['#1d2f52','#06313c'], ground:'#10313d', top:'#1fd8a4', far:'#14263a', mid:'#0d3b48', sun:'#8ff8db', void:'#06171d' },
-  { id:'temple', name:'Sky Temple',     len:19000, seed:55512, diff:1.0,  shape:'peak',
-    sky:['#ffb067','#4f33a8'], ground:'#522a66', top:'#ffc531', far:'#8a4a9c', mid:'#6a3680', sun:'#fff0a8', void:'#2a1434' }
+  { id:'roofs',  name:'Candy Rooftops', len:22000, seed:1337,  diff:0.55, shape:'blob', theme:'candy',
+    block:'#c2458c', spike:'#fff0f7', sky:['#ffd9ee','#9fe0ff'], ground:'#6b4bd6', top:'#a78bfa', far:'#ffffff', mid:'#7d5ad8', sun:'#fff3b8', void:'#3a2a63' },
+  { id:'sewer',  name:'Neon Sewer',     len:30000, seed:90210, diff:0.78, shape:'arch', theme:'sewer', weather:'drip',
+    block:'#123743', spike:'#8ff8db', sky:['#1d2f52','#06313c'], ground:'#10313d', top:'#1fd8a4', far:'#14263a', mid:'#0d3b48', sun:'#8ff8db', void:'#06171d' },
+  { id:'temple', name:'Sky Temple',     len:38000, seed:55512, diff:1.0,  shape:'peak', theme:'temple', weather:'ember',
+    block:'#3d2050', spike:'#ffe6a8', sky:['#ffb067','#4f33a8'], ground:'#522a66', top:'#ffc531', far:'#8a4a9c', mid:'#6a3680', sun:'#fff0a8', void:'#2a1434' },
+  { id:'frost',  name:'Frostpeak',      len:28000, seed:77301, diff:0.85, shape:'peak', theme:'snow',
+    weather:'snow', wind:true, storm:true,
+    block:'#7fc8e8', spike:'#ffffff', sky:['#9fd8f2','#dceefb'], ground:'#5b7ea3', top:'#f4fbff', far:'#ffffff', mid:'#bcd9ee', sun:'#fffdf2', void:'#243a52' }
 ];
+
+// --- lightning (Frostpeak) -------------------------------------------------
+// A bolt lands every few seconds somewhere near the pack. Anyone standing in
+// the blast is charred: black as coal, and briefly too rattled to run.
+export const BOLT_EVERY   = [3.2, 6.0];   // seconds between strikes, random in range
+export const BOLT_WARN    = 0.55;         // the flicker before it lands
+export const BOLT_R       = 70;           // horizontal blast radius
+export const CHAR_SEC     = 1.5;          // how long you stay burnt
+export const CHAR_SLOW    = 0.55;         // speed multiplier while charred
+
+// --- terrain ---------------------------------------------------------------
+export const SPRING_V = 1250;             // how hard a launch pad throws you
+export const ICE_GRIP = 0.16;             // acceleration multiplier on ice
+export const CLIMB    = 38;               // the tallest step you mount by running
 
 export const CHARS = [
   { id:'hog', run:{bob:1.6,lean:.03,squash:.04,sway:0,hover:0,spin:.55,step:1.15}, atk:{name:'Spin dash',fwd:58,back:58,stun:.34,slow:.4,kb:10,pop:140,cost:.70}, sprite:'sprites/hog.png',  name:'Blitz',   col:'#2f6fe4', dark:'#15336e', belly:'#f6c98a', muzzle:'#f6c98a', ear:'hedgehog', quill:'#2f6fe4', acc:null, acc2:'#ffffff', tail:'spike', shoe:'#e8402f', strap:'#ffffff', eye:'#3fd1a8' },

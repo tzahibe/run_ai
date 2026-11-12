@@ -7,7 +7,7 @@ import { groundAt, lowerBound, edgeAhead, landingAt } from '../shared/track.js';
 import { ceilOver as ceilOverBeam } from '../shared/sim.js';
 
 export function createBot(skill) {
-  return { skill, blink: 0, stuckT: 0, atkWait: 1.6 + Math.random() * 2, progX: -1e9, progT: 0, useIn: 0, jumpPrev: false };
+  return { skill, blink: 0, stuckT: 0, atkWait: 1.6 + Math.random() * 2, progX: -1e9, progT: 0, useIn: 0, jumpPrev: false, run: false };
 }
 
 export function botInput(p, b, w, dt, others) {
@@ -88,5 +88,9 @@ export function botInput(p, b, w, dt, others) {
   if (wantJump && b.jumpPrev) wantJump = false;   // one tick of release
   b.jumpPrev = wantJump;
 
-  return (wantJump ? C.IN_JUMP : 0) | (wantSlide ? C.IN_SLIDE : 0) | (wantUse ? C.IN_USE : 0) | (wantAtk ? C.IN_ATK : 0);
+  // Sprint the way a player does, or the humans simply walk away from them.
+  if (p.stam > 0.55) b.run = true; else if (p.stam < 0.12) b.run = false;
+
+  return (wantJump ? C.IN_JUMP : 0) | (wantSlide ? C.IN_SLIDE : 0) | (wantUse ? C.IN_USE : 0)
+       | (wantAtk ? C.IN_ATK : 0) | (b.run ? C.IN_RUN : 0);
 }

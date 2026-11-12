@@ -7,7 +7,7 @@ const cv = $('game');
 const keys = {};
 let bits = 0, charIdx = Math.floor(Math.random() * C.CHARS.length), trackIdx = 0;
 let cam = -240, toastT = 0;
-const parts = [], blasts = [];
+const parts = [], blasts = [], texts = [];
 const crates = new Set(), coins = new Set(), broken = new Set();
 let lastResults = null;
 
@@ -47,10 +47,10 @@ const net = new Net({
     $('play').textContent = 'Find match'; $('play').disabled = false; $('queueInfo').textContent = '';
     lastResults = null;
     log(`match ${m.room}: ${m.players.map(p => p.name).join(', ')}`);
-    if (m.loading) { pill('statePill', 'loading'); $('hud').hidden = true; setView('load'); beginLoading(m); }
-    else { pill('statePill', 'racing'); $('hud').hidden = false; setView('race'); }
+    if (m.loading) { pill('statePill', 'loading'); $('hud').hidden = true; setView('load', true); beginLoading(m); }
+    else { pill('statePill', 'racing'); $('hud').hidden = false; setView('race', true); }
   },
-  onGo: () => { pill('statePill', 'racing'); $('hud').hidden = false; setView('race'); },
+  onGo: () => { pill('statePill', 'racing'); $('hud').hidden = false; setView('race', true); },
   onBotOffer: m => {
     // The one button they asked for: three seconds to say no to a bot race.
     botOffer = true;
@@ -62,6 +62,9 @@ const net = new Net({
 });
 R.loadSprites('/client/');
 net.connect();
+// A handle for the screenshot and view tests. Harmless in production: it only
+// exposes what the page already has.
+window.__tf = { net, R, setView: (v, f) => setView(v, f), view: () => curView };
 
 function pill(id, text, cls) { const el = $(id); el.textContent = text; el.className = 'pill' + (cls ? ' ' + cls : ''); }
 function log(s) { const el = $('log'); el.textContent = (`${(performance.now() / 1000).toFixed(1)}  ${s}\n` + el.textContent).slice(0, 2600); }
@@ -71,22 +74,43 @@ function burst(x, y, n, col) { for (let i = 0; i < n; i++) parts.push({ x, y, vx
 function onEvent(e) {
   const mine = e.to === net.id;
   switch (e.k) {
-    case 'coin': if (mine) { coins.add(e.idx); parts.push({ x: e.x, y: e.y, vx: 0, vy: 140, life: .5, col: '#ffc531', s: 4 }); } break;
+    case 'coin':
+      if (!mine) break;
+      coins.add(e.idx);
+      parts.push({ x: e.x, y: e.y, vx: 0, vy: 140, life: .5, col: '#ffc531', s: 4 });
+      if (e.turbo) { texts.push({ x: e.x, y: e.y + 20, t: 0, life: 1.1, msg: 'TURBO!', col: '#ff8c42', big: true });
+                     burst(e.x, e.y, 20, '#ffc531'); }
+      else texts.push({ x: e.x, y: e.y, t: 0, life: .9, msg: `${e.left} more for speed`, col: '#ffc531' });
+      break;
     case 'crate': if (mine) { crates.add(e.idx); burst(e.x, e.y, 10, '#a8702f'); toast('picked up ' + e.item); } break;
     case 'break': broken.add(e.idx); burst(e.x, e.y, 14, '#ffc531'); break;
     case 'blast': blasts.push({ x: e.x, y: e.y, r: e.r, t: 0, life: .44 }); burst(e.x, e.y, 26, '#ffc531'); break;
     case 'melee': burst(e.x, e.y, e.landed ? 16 : 6, '#ffffff');
-      if (e.by === net.id) toast(e.landed ? 'hit!' : 'missed'); else if (mine) toast('you got hit'); break;
+      if (e.by === net.id) toast(e.landed ? (e.name || 'hit') + ' landed' : (e.name || 'attack') + ' missed');
+      else if (mine) toast('you got hit'); break;
     case 'hit': case 'freeze': burst(e.x, e.y + 24, 12, '#8bdcff'); if (mine) toast(e.k === 'freeze' ? 'frozen!' : 'hit!'); break;
     case 'dig': burst(e.x, e.y, 18, '#6b4420'); break;
+    case 'boltwarn':
+      R.bolts.push({ x: e.x, t: 0, warn: (e.inMs || 550) / 1000, seed: (Math.random() * 1e9) | 0 });
+      break;
+    case 'bolt': {
+      // The strike itself. The warning flash is already on screen; this is the
+      // bolt landing, plus a scorch mark on whoever was standing under it.
+      const b = R.bolts.find(x => Math.abs(x.x - e.x) < 2 && x.warn);
+      if (b) { b.t = b.warn; } else R.bolts.push({ x: e.x, t: 0, warn: 0, seed: (Math.random() * 1e9) | 0 });
+      burst(e.x, 40, 22, '#fdf6b8');
+      if ((e.hit || []).includes(net.id)) toast('struck by lightning!');
+      for (const id of (e.hit || [])) { const p = net.players.get(id); if (p) burst(p.x, p.y + 30, 14, '#2a2a2a'); }
+      break;
+    }
     case 'finish': if (mine) toast(`finished #${e.place}`); break;
   }
 }
 
 // ------------------------------------------------------------------ input
-const JUMPK = { Space: 1, ArrowUp: 1, KeyW: 1 }, SLIDEK = { ArrowDown: 1, KeyS: 1 }, USEK = { KeyE: 1 }, ATKK = { KeyF: 1, KeyK: 1 };
+const JUMPK = { Space: 1, ArrowUp: 1, KeyW: 1 }, SLIDEK = { ArrowDown: 1, KeyS: 1 }, USEK = { KeyE: 1 }, ATKK = { KeyF: 1, KeyK: 1 }, RUNK = { ShiftLeft: 1, ShiftRight: 1 };
 addEventListener('keydown', e => {
-  if (JUMPK[e.code] || SLIDEK[e.code] || USEK[e.code] || ATKK[e.code]) e.preventDefault();
+  if (JUMPK[e.code] || SLIDEK[e.code] || USEK[e.code] || ATKK[e.code] || RUNK[e.code]) e.preventDefault();
   keys[e.code] = true;
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
@@ -100,6 +124,7 @@ function readBits() {
   for (const k in SLIDEK) if (keys[k]) b |= C.IN_SLIDE;
   for (const k in USEK) if (keys[k]) b |= C.IN_USE;
   for (const k in ATKK) if (keys[k]) b |= C.IN_ATK;
+  for (const k in RUNK) if (keys[k]) b |= C.IN_RUN;
   return b;
 }
 
@@ -155,7 +180,13 @@ let roomState = null, whoList = [], roomList = [];
 let queueEndsAt = 0, queueCount = 0, hiddenAt = 0, botOffer = false, searching = false;
 
 let curView = 'lobby';
-function setView(v) {
+// The results table is sacred. A race leaves behind a flurry of server traffic --
+// the room re-forms, the room list is rebroadcast, players are marked un-ready --
+// and every one of those updates used to navigate the player off the podium
+// before they could read it. So navigation away from 'result' needs an explicit
+// reason: a button they pressed, or a new race actually starting.
+function setView(v, force) {
+  if (curView === 'result' && v !== 'result' && !force) return;
   curView = v;
   $('lobbyView').hidden = v !== 'lobby';
   $('roomView').hidden = v !== 'room';
@@ -236,8 +267,8 @@ $('delBot').onclick = () => net.send({ t: 'removeBot' });
 
 function showRoom(st) {
   roomState = st;
-  if (!st) { setView('lobby'); renderTracks(); return; }
-  if (net.state !== 'racing') setView('room');
+  if (!st) { if (curView !== 'result') { setView('lobby'); renderTracks(); } return; }
+  if (net.state !== 'racing' && curView !== 'result') setView('room');
   const host = st.hostId === net.id;
   const me = st.players.find(p => p.id === net.id);
   $('roomTitle').textContent = st.name || 'Room';
@@ -273,9 +304,9 @@ function renderRooms() {
     return `<div class="roomcard${shut ? ' full' : ''}">
       <div class="rc-top"><b>${esc(r.name || 'Room')}</b>
         ${r.locked ? '<svg class="lockico" viewBox="0 0 24 24"><use href="#lock"></use></svg>' : ''}</div>
-      <div class="rc-sub"><span class="rc-code">${r.code}</span> · ${esc(C.TRACKS[r.track].name)}</div>
+      <div class="rc-sub"><span class="rc-code">${r.code}</span> · ${esc((C.TRACKS[r.track] || C.TRACKS[0]).name)}</div>
       <div class="rc-n">${r.n} / ${r.max} players${r.running ? ' · racing' : ''}</div>
-      <div class="rc-who">${r.players.map(esc).join(', ')}</div>
+      <div class="rc-who">${(r.players || []).map(esc).join(', ')}</div>
       <button class="rc-join" data-join="${r.code}"${shut ? ' disabled' : ''}>${r.running ? 'in a race' : r.n >= r.max ? 'full' : r.locked ? 'join (password)' : 'join'}</button>
     </div>`;
   }).join('');
@@ -380,6 +411,18 @@ function frame(now) {
 
   for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; p.life -= dt; p.vy -= 1200 * dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.life <= 0) parts.splice(i, 1); }
   for (let i = blasts.length - 1; i >= 0; i--) { blasts[i].t += dt; if (blasts[i].t >= blasts[i].life) blasts.splice(i, 1); }
+  for (let i = texts.length - 1; i >= 0; i--) { texts[i].t += dt; if (texts[i].t >= texts[i].life) texts.splice(i, 1); }
+  // flames off the heels while sprinting, a blowtorch on turbo
+  if (net.state === 'racing' && net.me && !net.me.done && (net.me.boost > 0 || net.me.sprinting)) {
+    const n = net.me.boost > 0 ? 3 : 1;
+    for (let k = 0; k < n; k++) {
+      if (Math.random() > (net.me.boost > 0 ? 0.9 : 0.5)) continue;
+      const hot = Math.random();
+      parts.push({ x: net.me.x - 10 - Math.random() * 8, y: net.me.y + 6 + Math.random() * 20,
+        vx: -110 - Math.random() * 170, vy: 40 + Math.random() * 120, life: .22 + Math.random() * .3,
+        col: hot < .45 ? '#ffd84a' : (hot < .8 ? '#ff8c2b' : '#ff4d2e'), s: 3 + Math.random() * (net.me.boost > 0 ? 6 : 3.5) });
+    }
+  }
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('on');
 
   if (net.state === 'racing' && net.track && net.me) {
@@ -387,7 +430,7 @@ function frame(now) {
     const racers = [...net.interpolated(), me];
     cam += ((me.x - R.viewWidth() * 0.34) - cam) * (1 - Math.exp(-dt * 7));
     R.render(cv, { track: net.track, racers, me, meItem: net.me.item, entities: net.entities,
-      cam, now: performance.now() / 1000, parts, blasts, crates, coins, broken });
+      cam, now: performance.now() / 1000, raceT: net.time, dt, parts, blasts, texts, crates, coins, broken });
     drawHud(racers);
   } else {
     const c = cv.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = '#120c22'; c.fillRect(0, 0, cv.width, cv.height);
@@ -426,7 +469,32 @@ function drawHud(racers) {
   for (const p of net.players.values()) if (p !== me && (p.done ? p.x + 1e6 : p.x) > (me.done ? me.x + 1e6 : me.x)) place++;
   const t = Math.max(0, net.time);
   const s = Math.floor(t), cs = Math.floor((t - s) * 100);
-  $('place').innerHTML = `${place}/${net.players.size}<small>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}.${String(cs).padStart(2, '0')} · ${me.coins}c</small>`;
+  // who is breathing down your neck, and how far away are they
+  let near = null, nd = 1e9;
+  for (const p of net.players.values()) {
+    if (p === me || p.done) continue;
+    const d = Math.abs(p.x - me.x);
+    if (d < nd) { nd = d; near = p; }
+  }
+  $('rival').innerHTML = near
+    ? `<span class="${near.x > me.x ? 'ahead' : 'behind'}">${near.x > me.x ? '▲' : '▼'} ${Math.round(nd)} m</span><i>${esc(near.name || '')}</i>`
+    : '<i>clear track</i>';
+  // Coins buy turbo, so the countdown to it gets real estate: big, centred,
+  // with a bar that fills as you collect.
+  const need = C.COINS_PER_TURBO - (me.meter || 0);
+  const tb = $('turbo');
+  if (me.boost > 0) {
+    $('turboN').textContent = me.boost.toFixed(1) + 's';
+    $('turbo').querySelector('span').textContent = 'turbo!';
+    tb.classList.add('hot');
+  } else {
+    $('turboN').textContent = need;
+    $('turbo').querySelector('span').textContent = need === 1 ? 'coin to turbo' : 'coins to turbo';
+    tb.classList.remove('hot');
+  }
+  $('turboBar').style.width = Math.min(100, ((me.meter || 0) / C.COINS_PER_TURBO) * 100) + '%';
+  $('place').innerHTML = `${place}/${net.players.size}<small>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}.${String(cs).padStart(2, '0')}` +
+    ` · ${me.coins}c</small>`;
   const slot = $('slot');
   if (me.item >= 0) { const it = C.ITEMS[me.item]; slot.textContent = it.name; slot.classList.add('full'); slot.style.setProperty('--it', it.col); slot.style.borderColor = it.col; }
   else { slot.textContent = 'item'; slot.classList.remove('full'); slot.style.borderColor = ''; }
@@ -498,10 +566,10 @@ function showResults(res) {
   setView('result');
   log('race over: ' + res.map(r => `${r.place}.${r.name}`).join(' '));
 }
-$('backBtn').onclick = () => { podAvatars = []; setView(roomState ? 'room' : 'lobby'); };
+$('backBtn').onclick = () => { podAvatars = []; setView(roomState ? 'room' : 'lobby', true); };
 // nothing else dismisses the results: the player leaves it when they choose to
 $('againBtn').onclick = () => {
   podAvatars = [];
-  if (roomState) { setView('room'); if (roomState.hostId === net.id) net.send({ t: 'start' }); }
-  else { setView('lobby'); net.send({ t: 'queue', trackIdx }); searching = true; $('play').textContent = 'Searching…'; }
+  if (roomState) { setView('room', true); if (roomState.hostId === net.id) net.send({ t: 'start' }); }
+  else { setView('lobby', true); net.send({ t: 'queue', trackIdx }); searching = true; $('play').textContent = 'Searching…'; }
 };

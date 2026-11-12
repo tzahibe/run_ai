@@ -5,7 +5,7 @@
 
 import * as C from '../shared/constants.js';
 import { buildTrack, groundAt, lowerBound } from '../shared/track.js';
-import { createPlayer, stepPlayer, encodePlayer, hit, atkOf } from '../shared/sim.js';
+import { createPlayer, stepPlayer, encodePlayer, hit, atkOf, zap } from '../shared/sim.js';
 import { createBot, botInput } from './bot.js';
 
 let nextEnt = 1;
@@ -29,6 +29,11 @@ export class Room {
     this.state = 'lobby';
     this.finishOrder = [];
     this.acc = 0;
+    // Storm tracks: the next bolt, and the one currently flickering before it
+    // lands. Both live on the server -- clients only ever see the events.
+    this.storm = !!C.TRACKS[trackIdx].storm;
+    this.nextBolt = this.storm ? 2.5 : Infinity;
+    this.pendingBolt = null;
     this.lastHr = process.hrtime.bigint();
   }
 
@@ -114,7 +119,7 @@ export class Room {
       if (e.hist.length > 40) e.hist.shift();
     }
 
-    if (racing) { this.pickups(); this.stepEntities(dt); this.checkFinish(); }
+    if (racing) { this.pickups(); this.stepEntities(dt); this.lightning(dt); this.checkFinish(); }
     return racing;
   }
 
@@ -208,6 +213,38 @@ export class Room {
     push({ k: 'use', x: p.x, y: p.y + 30, to: p.id, item: it.id });
   }
 
+  // --- lightning ----------------------------------------------------------
+  // A bolt is announced before it lands, so everyone gets a flicker's warning
+  // and can try to run out from under it. It aims near the middle of the pack
+  // rather than at a person: being in front should not be a punishment.
+  lightning(dt) {
+    if (!this.storm) return;
+    const live = this.players.filter(e => !e.p.done);
+    if (!live.length) return;
+
+    if (this.pendingBolt) {
+      this.pendingBolt.t -= dt;
+      if (this.pendingBolt.t <= 0) {
+        const bx = this.pendingBolt.x;
+        const struck = [];
+        for (const e of live) if (Math.abs(e.p.x - bx) <= C.BOLT_R && zap(e.p)) struck.push(e.p.id);
+        this.events.push({ k: 'bolt', x: bx, hit: struck });
+        this.pendingBolt = null;
+      }
+      return;
+    }
+
+    this.nextBolt -= dt;
+    if (this.nextBolt > 0) return;
+    const xs = live.map(e => e.p.x);
+    const mid = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const bx = mid + (Math.random() * 2 - 1) * 240;
+    this.pendingBolt = { x: bx, t: C.BOLT_WARN };
+    this.events.push({ k: 'boltwarn', x: bx, inMs: Math.round(C.BOLT_WARN * 1000) });
+    const [lo, hi] = C.BOLT_EVERY;
+    this.nextBolt = lo + Math.random() * (hi - lo);
+  }
+
   pickups() {
     for (const e of this.players) {
       const p = e.p;
@@ -293,7 +330,13 @@ export class Room {
         this.events.push({ k: 'finish', to: e.p.id, place: this.finishOrder.length, time: e.p.time });
       }
     }
-    if (this.finishOrder.length >= this.players.length || this.time > 240) {
+    // Once every human is home, bots get a short grace to come in and then the
+    // race is called. Nobody should sit on a results screen waiting for a bot
+    // that is having trouble with a gap.
+    const humansLeft = this.players.some(e => e.conn && !e.p.done);
+    if (!humansLeft && this.botGrace === undefined) this.botGrace = this.time + 8;
+    const graceUp = this.botGrace !== undefined && this.time > this.botGrace;
+    if (this.finishOrder.length >= this.players.length || graceUp || this.time > 240) {
       this.state = 'over';
       this.onFinished(this);
     }

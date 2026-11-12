@@ -173,9 +173,19 @@ export class Net {
     const ack = snap.ack ?? -1;
     while (this.pending.length && this.pending[0].seq <= ack) this.pending.shift();
 
-    // replay everything the server has not consumed yet
+    // Replay everything the server has not consumed yet. Moving platforms are
+    // a function of the race clock, so the replay has to walk that clock
+    // forward too -- otherwise every unacked step asks where the platform is
+    // *now* instead of where it was, and anyone riding one gets corrected.
     let n = 0;
-    for (const inp of this.pending) { stepPlayer(this.me, inp.bits, this.world, C.DT); n++; }
+    const realT = this.time;
+    let t0 = realT - this.pending.length * C.DT;
+    for (const inp of this.pending) {
+      this.time = t0; t0 += C.DT;
+      stepPlayer(this.me, inp.bits, this.world, C.DT);
+      n++;
+    }
+    this.time = realT;
     this.stats.replay = n;
 
     const dx = beforeX - this.me.x, dy = beforeY - this.me.y;

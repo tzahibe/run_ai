@@ -2,7 +2,7 @@
 // code can think in "height above the ground".
 
 import * as C from '../shared/constants.js';
-import { lowerBound } from '../shared/track.js';
+import { lowerBound, moverAt, blinkOn } from '../shared/track.js';
 
 let ctx, scale = 1, VW = 925, GYdev = 0;
 export const VH = 520;
@@ -20,6 +20,205 @@ export const viewWidth = () => VW;
 const screenT = cam => ctx.setTransform(scale, 0, 0, scale, 0, 0);
 const worldT = cam => ctx.setTransform(scale, 0, 0, -scale, -cam * scale, GYdev);
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+// --------------------------------------------------------------- scenery
+// Props the renderer scatters along the ground. Each theme is a small painter
+// that draws into world space with y pointing up, origin at the racer's feet.
+const DECO = {
+  snow(k, t, p) {
+    k %= 4;
+    const sway = Math.sin(t * 1.1 + p) * 0.055;            // the wind, visibly
+    ctx.rotate(sway);
+    if (k === 0 || k === 1) {                              // snow-laden pine
+      const h = k === 0 ? 150 : 108;
+      ctx.fillStyle = '#4a3326'; ctx.fillRect(-5, 0, 10, h * 0.3);
+      for (let i = 0; i < 3; i++) {
+        const y = h * (0.26 + i * 0.22), w = (h * 0.34) * (1 - i * 0.22);
+        ctx.fillStyle = '#1f6b4e';
+        ctx.beginPath(); ctx.moveTo(0, y + h * 0.3); ctx.lineTo(-w, y); ctx.lineTo(w, y); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#f4fbff';
+        ctx.beginPath(); ctx.moveTo(0, y + h * 0.3); ctx.lineTo(-w, y); ctx.lineTo(-w * .45, y + h * .05);
+        ctx.lineTo(0, y + h * .14); ctx.lineTo(w * .45, y + h * .05); ctx.lineTo(w, y); ctx.closePath(); ctx.fill();
+      }
+    } else if (k === 2) {                                  // snowdrift
+      ctx.fillStyle = '#f4fbff';
+      ctx.beginPath(); ctx.ellipse(0, 6, 44, 20, 0, 0, 6.284); ctx.fill();
+      ctx.fillStyle = '#dcebf7'; ctx.beginPath(); ctx.ellipse(14, 4, 20, 11, 0, 0, 6.284); ctx.fill();
+    } else {                                               // little snowman
+      ctx.fillStyle = '#f4fbff';
+      ctx.beginPath(); ctx.arc(0, 16, 17, 0, 6.284); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 40, 12, 0, 6.284); ctx.fill();
+      ctx.fillStyle = '#1b2733'; ctx.beginPath(); ctx.arc(-4, 43, 1.8, 0, 6.284); ctx.fill();
+      ctx.beginPath(); ctx.arc(4, 43, 1.8, 0, 6.284); ctx.fill();
+      ctx.fillStyle = '#ff8a3d'; ctx.beginPath(); ctx.moveTo(0, 39); ctx.lineTo(10, 37); ctx.lineTo(0, 35); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#6b4a2f'; ctx.lineWidth = 3; ctx.beginPath();
+      ctx.moveTo(-15, 22); ctx.lineTo(-28, 32); ctx.moveTo(15, 22); ctx.lineTo(28, 32); ctx.stroke();
+    }
+  },
+  // Candy Rooftops: the whole map is made of sweets.
+  candy(k, t, p) {
+    k %= 6;
+    if (k === 0) {                                         // lollipop with a swirl
+      ctx.fillStyle = '#fff'; ctx.fillRect(-2.5, 0, 5, 48);
+      ctx.fillStyle = '#ff6fae'; ctx.beginPath(); ctx.arc(0, 62, 17, 0, 6.284); ctx.fill();
+      ctx.strokeStyle = '#fff6fb'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath();
+      for (let a = 0; a < 9; a++) { const rr2 = a * 1.8, an = a * 0.8 + t * 0.8;
+        a ? ctx.lineTo(Math.cos(an) * rr2, 62 + Math.sin(an) * rr2) : ctx.moveTo(0, 62); }
+      ctx.stroke(); ctx.lineCap = 'butt';
+    } else if (k === 1) {                                  // candy cane
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 11; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 54); ctx.quadraticCurveTo(0, 74, -18, 70); ctx.stroke();
+      ctx.strokeStyle = '#ff4d6d'; ctx.lineWidth = 4;
+      for (let i = 0; i < 7; i++) { ctx.beginPath(); ctx.moveTo(-6, 6 + i * 9); ctx.lineTo(6, 2 + i * 9); ctx.stroke(); }
+      ctx.lineCap = 'butt';
+    } else if (k === 2) {                                  // cupcake
+      ctx.fillStyle = '#e8a0c8'; ctx.beginPath();
+      ctx.moveTo(-18, 0); ctx.lineTo(18, 0); ctx.lineTo(13, 26); ctx.lineTo(-13, 26); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff1f7';
+      ctx.beginPath(); ctx.arc(-8, 30, 11, 0, 6.284); ctx.arc(8, 30, 11, 0, 6.284); ctx.arc(0, 40, 12, 0, 6.284); ctx.fill();
+      ctx.fillStyle = '#ff4d6d'; ctx.beginPath(); ctx.arc(0, 52, 5, 0, 6.284); ctx.fill();
+    } else if (k === 3) {                                  // donut on a stand
+      ctx.fillStyle = '#fff'; ctx.fillRect(-2.5, 0, 5, 30);
+      ctx.fillStyle = '#c98a5e'; ctx.beginPath(); ctx.arc(0, 48, 18, 0, 6.284); ctx.fill();
+      ctx.fillStyle = '#ff9ecb'; ctx.beginPath(); ctx.arc(0, 50, 16, 0, 6.284); ctx.fill();
+      ctx.fillStyle = '#ffd9ee'; ctx.beginPath(); ctx.arc(0, 48, 6, 0, 6.284); ctx.fill();
+      const sp = ['#7ee0a8', '#ffd36e', '#b58cff', '#fff'];
+      for (let i = 0; i < 6; i++) { const a = i * 1.05 + p;
+        ctx.fillStyle = sp[i % 4]; ctx.save(); ctx.translate(Math.cos(a) * 11, 50 + Math.sin(a) * 11);
+        ctx.rotate(a); ctx.fillRect(-3, -1.3, 6, 2.6); ctx.restore(); }
+    } else if (k === 4) {                                  // wrapped sweet
+      ctx.fillStyle = '#ffd36e'; ctx.beginPath(); ctx.ellipse(0, 14, 15, 11, 0, 0, 6.284); ctx.fill();
+      ctx.fillStyle = '#ffb703';
+      ctx.beginPath(); ctx.moveTo(-14, 14); ctx.lineTo(-27, 6); ctx.lineTo(-27, 22); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(14, 14); ctx.lineTo(27, 6); ctx.lineTo(27, 22); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff6d1'; ctx.beginPath(); ctx.ellipse(-4, 17, 5, 3, 0, 0, 6.284); ctx.fill();
+    } else {                                               // jelly-bean bush
+      ctx.fillStyle = '#7ee0a8'; ctx.beginPath(); ctx.ellipse(0, 13, 30, 17, 0, 0, 6.284); ctx.fill();
+      const bc = ['#ff6fae', '#ffd36e', '#b58cff', '#9fe0ff'];
+      for (let i = 0; i < 5; i++) { const a = p + i * 1.3;
+        ctx.fillStyle = bc[i % 4];
+        ctx.beginPath(); ctx.ellipse(Math.cos(a) * 19, 15 + Math.sin(a) * 8, 5, 3.6, a, 0, 6.284); ctx.fill(); }
+    }
+  },
+  // Neon Sewer: everything that is not slime is lit by it.
+  sewer(k, t, p) {
+    k %= 4;
+    if (k === 0) {                                         // dripping pipe, lit rim
+      ctx.fillStyle = '#2d6475'; rr(-22, 0, 44, 58, 6); ctx.fill();
+      ctx.fillStyle = '#1fd8a4'; rr(-24, 48, 48, 10, 4); ctx.fill();
+      ctx.fillStyle = '#0d3b48'; ctx.beginPath(); ctx.ellipse(0, 52, 13, 7, 0, 0, 6.284); ctx.fill();
+      const dz = (t * 60 + p * 30) % 60;
+      ctx.fillStyle = '#8ff8db'; ctx.globalAlpha = .8;
+      ctx.beginPath(); ctx.ellipse(0, 46 - dz, 2.6, 4.5, 0, 0, 6.284); ctx.fill(); ctx.globalAlpha = 1;
+    } else if (k === 1) {                                  // glowing fungus cluster
+      for (let i = -2; i <= 2; i++) {
+        const hh = 16 + (2 - Math.abs(i)) * 11, gl = .6 + Math.sin(t * 2.4 + p + i) * .3;
+        ctx.fillStyle = '#17414f'; ctx.fillRect(i * 13 - 2.5, 0, 5, hh);
+        ctx.fillStyle = '#8ff8db'; ctx.globalAlpha = gl;
+        ctx.beginPath(); ctx.ellipse(i * 13, hh + 4, 10 - Math.abs(i) * 2, 7, 0, 0, 6.284); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    } else if (k === 2) {                                  // sludge pool, bubbling
+      ctx.fillStyle = '#1fd8a4'; ctx.globalAlpha = .5;
+      ctx.beginPath(); ctx.ellipse(0, 5, 42, 10, 0, 0, 6.284); ctx.fill();
+      ctx.globalAlpha = .85;
+      for (let i = 0; i < 3; i++) { const b = (t * 1.3 + i * .4 + p) % 1;
+        ctx.beginPath(); ctx.arc((i - 1) * 15, 5 + b * 16, 3.5 * (1 - b), 0, 6.284); ctx.fill(); }
+      ctx.globalAlpha = 1;
+    } else {                                               // valve wheel with a lit core
+      ctx.fillStyle = '#2d6475'; ctx.fillRect(-5, 0, 10, 34);
+      ctx.strokeStyle = '#49a3b8'; ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.arc(0, 44, 18, 0, 6.284); ctx.stroke();
+      ctx.strokeStyle = '#1fd8a4'; ctx.lineWidth = 3;
+      for (let i = 0; i < 4; i++) { const a = i * 1.57 + t * .6;
+        ctx.beginPath(); ctx.moveTo(0, 44); ctx.lineTo(Math.cos(a) * 17, 44 + Math.sin(a) * 17); ctx.stroke(); }
+    }
+  },
+  // Sky Temple: sandstone and gold, so it reads against the purple hills.
+  temple(k, t, p) {
+    k %= 4;
+    if (k === 0) {                                         // broken pillar
+      ctx.fillStyle = '#e8d5ab'; rr(-17, 0, 34, 100, 3); ctx.fill();
+      ctx.fillStyle = '#c9b183'; ctx.fillRect(-17, 0, 7, 100);
+      ctx.fillStyle = '#ffc531'; rr(-22, 96, 44, 9, 3); ctx.fill();
+      ctx.fillStyle = '#c9b183'; rr(-21, 0, 42, 8, 3); ctx.fill();
+    } else if (k === 1) {                                  // brazier
+      ctx.fillStyle = '#e8d5ab'; rr(-16, 0, 32, 30, 4); ctx.fill();
+      ctx.fillStyle = '#ffc531'; ctx.fillRect(-18, 26, 36, 6);
+      const f = 18 + Math.sin(t * 7 + p) * 7;
+      ctx.fillStyle = '#ff9a3d'; ctx.beginPath(); ctx.moveTo(-11, 32); ctx.quadraticCurveTo(0, 32 + f, 11, 32); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff0a8'; ctx.beginPath(); ctx.moveTo(-5, 32); ctx.quadraticCurveTo(0, 32 + f * .6, 5, 32); ctx.closePath(); ctx.fill();
+    } else if (k === 2) {                                  // banner on a pole
+      ctx.fillStyle = '#c9b183'; ctx.fillRect(-4, 0, 8, 112);
+      ctx.fillStyle = '#ffc531'; ctx.beginPath(); ctx.arc(0, 116, 6, 0, 6.284); ctx.fill();
+      const w = Math.sin(t * 1.6 + p) * 5;
+      ctx.fillStyle = '#c0392b';
+      ctx.beginPath(); ctx.moveTo(4, 110); ctx.lineTo(38 + w, 103); ctx.lineTo(38 + w, 62); ctx.lineTo(4, 69); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffc531';
+      ctx.beginPath(); ctx.arc(21 + w / 2, 86, 7, 0, 6.284); ctx.fill();
+    } else {                                               // rubble
+      ctx.fillStyle = '#e8d5ab'; ctx.beginPath(); ctx.ellipse(0, 11, 24, 14, 0, 0, 6.284); ctx.fill();
+      ctx.fillStyle = '#c9b183'; ctx.beginPath(); ctx.ellipse(13, 7, 11, 8, 0, 0, 6.284); ctx.fill();
+      ctx.fillStyle = '#ffc531'; ctx.fillRect(-18, 0, 36, 4);
+    }
+  }
+};
+
+// Weather lives in the renderer: it changes nothing about the race, so it
+// never has to agree with the server.
+const flakes = [];
+export const bolts = [];              // {x, t, warn} pushed by main.js on server events
+let weatherFor = null;
+
+function seedWeather(kind) {
+  flakes.length = 0;
+  const n = kind === 'snow' ? 190 : kind === 'ember' ? 60 : kind === 'drip' ? 70 : 0;
+  for (let i = 0; i < n; i++)
+    flakes.push({ x: Math.random() * 1600, y: Math.random() * VH,
+      r: kind === 'snow' ? 1.3 + Math.random() * 2.6 : 1 + Math.random() * 2,
+      sp: 26 + Math.random() * 70, ph: Math.random() * 6.28 });
+  weatherFor = kind;
+}
+
+function drawWeather(kind, now, cam, dt, windy) {
+  if (weatherFor !== kind) seedWeather(kind);
+  if (!flakes.length) return;
+  // A gust that comes and goes, so the snow visibly blows sideways.
+  const gust = windy ? 70 + Math.sin(now * 0.37) * 55 + Math.sin(now * 1.13) * 25 : 0;
+  const col = kind === 'snow' ? '#ffffff' : kind === 'ember' ? '#ffb15c' : '#8ff8db';
+  ctx.fillStyle = col; ctx.globalAlpha = kind === 'snow' ? .85 : .6;
+  for (const f of flakes) {
+    f.y -= f.sp * dt * (kind === 'ember' ? -1 : 1);
+    f.x += (gust + Math.sin(now * 1.7 + f.ph) * 22) * dt;
+    if (f.y < -10) { f.y = VH + 10; f.x = Math.random() * 1600; }
+    if (f.y > VH + 10) f.y = -10;
+    if (f.x > 1600) f.x -= 1600; if (f.x < 0) f.x += 1600;
+    const px = (f.x - cam * 0.35) % 1600, x = px < 0 ? px + 1600 : px;
+    if (x > VW + 8 || f.y > VH * 0.72) continue;   // nothing falls through the ground
+    ctx.beginPath(); ctx.arc(x, f.y, f.r, 0, 6.284); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// A jagged bolt from the top of the screen down to the ground.
+function drawBolt(x, gy, seedv, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.strokeStyle = '#fff6b0'; ctx.lineWidth = 11;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.shadowColor = '#cfe8ff'; ctx.shadowBlur = 26;
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.beginPath(); ctx.moveTo(x, -20);
+    let px = x, r = seedv;
+    for (let y = 0; y < gy; y += gy / 7) {
+      r = (r * 1103515245 + 12345) & 0x7fffffff;
+      px = x + ((r % 100) - 50) * 0.9;
+      ctx.lineTo(px, y);
+    }
+    ctx.lineTo(x, gy); ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.shadowBlur = 10;
+  }
+  ctx.restore();
+}
 
 export function render(cv, s) {
   ctx = cv.getContext('2d');
@@ -47,6 +246,19 @@ export function render(cv, s) {
     ctx.fillStyle = t.ground; ctx.fillRect(run.s, 0, run.e - run.s, -400);
     ctx.fillStyle = t.top; ctx.fillRect(run.s, 0, run.e - run.s, -11);
   }
+  // Scenery along the ground. Held back -- smaller, softer, slightly washed out
+  // against the sky -- so the eye goes to the crates and coins instead.
+  const paint = DECO[t.theme];
+  if (paint) {
+    ctx.save(); ctx.globalAlpha = .78;
+    for (const d of s.track.bg.deco) {
+      if (d.x < L - 140 || d.x > R + 140) continue;
+      ctx.save(); ctx.translate(d.x, 0); ctx.scale(d.f * d.s, d.s);
+      paint(d.k, s.now, d.p); ctx.restore();
+    }
+    ctx.restore();
+  }
+
   for (const hl of s.entities.holes) {
     if (hl.x + hl.w < L || hl.x > R) continue;
     ctx.fillStyle = '#06040d'; ctx.fillRect(hl.x, 3, hl.w, -520);
@@ -60,6 +272,86 @@ export function render(cv, s) {
     ctx.fillStyle = t.ground; rr(p.x, p.y - 16, p.w, 16, 5); ctx.fill();
     ctx.fillStyle = t.top; ctx.fillRect(p.x, p.y - 4, p.w, 4);
   }
+
+  // --- ice: a sheen on the ground you can see from a distance ------------
+  for (const z of s.track.ice) {
+    if (z.e < L || z.s > R) continue;
+    ctx.fillStyle = '#cfefff'; ctx.fillRect(z.s, 0, z.e - z.s, -14);
+    ctx.globalAlpha = .55; ctx.fillStyle = '#ffffff';
+    for (let gx = z.s + 18; gx < z.e - 10; gx += 64) {
+      ctx.beginPath(); ctx.moveTo(gx, -3); ctx.lineTo(gx + 16, -3); ctx.lineTo(gx + 10, -11);
+      ctx.lineTo(gx - 6, -11); ctx.closePath(); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // --- conveyors: the floor itself is moving, so show which way -----------
+  for (const b of s.track.belts) {
+    if (b.e < L || b.s > R) continue;
+    ctx.fillStyle = b.v > 0 ? '#1fd8a4' : '#c0392b'; ctx.fillRect(b.s, 0, b.e - b.s, -13);
+    ctx.fillStyle = '#06171d'; ctx.globalAlpha = .55;
+    const drift = (s.now * Math.abs(b.v) * 0.6) % 46;
+    for (let gx = b.s - 46 + (b.v > 0 ? drift : 46 - drift); gx < b.e; gx += 46) {
+      const d = b.v > 0 ? 1 : -1;
+      ctx.beginPath(); ctx.moveTo(gx, -2); ctx.lineTo(gx + 14 * d, -6.5); ctx.lineTo(gx, -11); ctx.closePath(); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // --- stairs -------------------------------------------------------------
+  {
+    const si = Math.max(0, lowerBound(s.track.steps, L - 200));
+    for (let i = si; i < s.track.steps.length; i++) {
+      const st = s.track.steps[i]; if (st.x > R + 200) break;
+      ctx.fillStyle = t.ground; ctx.fillRect(st.x, st.y - st.h, st.w, st.h);
+      ctx.fillStyle = t.top; ctx.fillRect(st.x, st.y - 6, st.w, 6);
+      ctx.globalAlpha = .22; ctx.fillStyle = '#000';
+      ctx.fillRect(st.x, st.y - st.h, 4, st.h); ctx.globalAlpha = 1;
+    }
+  }
+
+  // --- moving platforms ---------------------------------------------------
+  for (const m of s.track.movers) {
+    const q = moverAt(m, s.raceT);
+    if (q.x + q.w < L || q.x > R) continue;
+    ctx.fillStyle = t.ground; rr(q.x, q.y - 18, q.w, 18, 6); ctx.fill();
+    ctx.fillStyle = t.top; ctx.fillRect(q.x, q.y - 5, q.w, 5);
+    ctx.globalAlpha = .5; ctx.fillStyle = t.top;        // which way it is going
+    const dir = Math.cos(s.raceT * m.sp + m.ph);
+    if (m.ax) { const cx = q.x + q.w / 2, d = dir > 0 ? 1 : -1;
+      ctx.beginPath(); ctx.moveTo(cx + 12 * d, q.y - 9); ctx.lineTo(cx - 6 * d, q.y - 3);
+      ctx.lineTo(cx - 6 * d, q.y - 15); ctx.closePath(); ctx.fill(); }
+    if (m.ay) { const cx = q.x + q.w / 2, d = dir > 0 ? 1 : -1;
+      ctx.beginPath(); ctx.moveTo(cx, q.y - 9 + 10 * d); ctx.lineTo(cx - 7, q.y - 9 - 3 * d);
+      ctx.lineTo(cx + 7, q.y - 9 - 3 * d); ctx.closePath(); ctx.fill(); }
+    ctx.globalAlpha = 1;
+  }
+
+  // --- blinking platforms: solid, then gone -------------------------------
+  for (const b of s.track.blinkers) {
+    if (b.x + b.w < L || b.x > R) continue;
+    const ph = ((s.raceT * b.sp + b.ph) % 1 + 1) % 1, on = ph < 0.62;
+    const fade = on ? (ph > 0.5 ? 1 - (ph - 0.5) / 0.12 * 0.55 : 1)       // warns before it goes
+                    : (ph > 0.88 ? (ph - 0.88) / 0.12 * 0.4 : 0.12);
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = on ? t.ground : '#000000';
+    rr(b.x, b.y - 16, b.w, 16, 5); ctx.fill();
+    if (on) { ctx.fillStyle = t.top; ctx.fillRect(b.x, b.y - 4, b.w, 4); }
+    ctx.globalAlpha = 1;
+  }
+
+  // --- launch pads --------------------------------------------------------
+  for (const sp of s.track.springs) {
+    if (sp.x + sp.w < L || sp.x > R) continue;
+    const squat = Math.abs(Math.sin(s.now * 3 + sp.x)) * 4;
+    ctx.fillStyle = '#5a4068'; ctx.fillRect(sp.x + 6, 0, sp.w - 12, 10 - squat);
+    ctx.fillStyle = '#ff4d6d'; rr(sp.x, 10 - squat, sp.w, 11, 5); ctx.fill();
+    ctx.fillStyle = '#ffd36e'; ctx.globalAlpha = .6 + .3 * Math.sin(s.now * 6 + sp.x);
+    for (let k = 0; k < 2; k++) { const ay2 = 34 + k * 17 + Math.sin(s.now * 5 + k) * 3;
+      ctx.beginPath(); ctx.moveTo(sp.x + sp.w / 2, ay2 + 11); ctx.lineTo(sp.x + sp.w / 2 - 9, ay2);
+      ctx.lineTo(sp.x + sp.w / 2 + 9, ay2); ctx.closePath(); ctx.fill(); }
+    ctx.globalAlpha = 1;
+  }
   if (s.track.len > L - 200 && s.track.len < R + 200) {
     ctx.fillStyle = '#ffffff'; ctx.fillRect(s.track.len - 4, 0, 8, 230);
     for (let i = 0; i < 9; i++) { ctx.fillStyle = i % 2 ? '#1b1130' : '#ffffff'; ctx.fillRect(s.track.len + 4, 150 + i * 9, 9, 9);
@@ -70,10 +362,12 @@ export function render(cv, s) {
   for (let i = oi; i < s.track.obst.length; i++) {
     const o = s.track.obst[i]; if (o.x > R + 200) break;
     if (s.broken.has(o.idx)) continue;
-    if (o.type === 'wall') { ctx.fillStyle = '#2a1f4a'; rr(o.x - o.w / 2, 0, o.w, o.h, 4); ctx.fill(); ctx.fillStyle = t.top; ctx.fillRect(o.x - o.w / 2, o.h - 5, o.w, 5); }
-    else if (o.type === 'spike') { ctx.fillStyle = '#d9e2ef'; const n = Math.round(o.w / 18);
+    if (o.type === 'wall') { ctx.fillStyle = t.block || '#2a1f4a'; rr(o.x - o.w / 2, 0, o.w, o.h, 4); ctx.fill(); ctx.fillStyle = t.top; ctx.fillRect(o.x - o.w / 2, o.h - 5, o.w, 5); }
+    else if (o.type === 'spike') { ctx.fillStyle = t.spike || '#d9e2ef'; const n = Math.round(o.w / 18);
       for (let k = 0; k < n; k++) { const sx = o.x - o.w / 2 + k * 18; ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx + 9, 24); ctx.lineTo(sx + 18, 0); ctx.closePath(); ctx.fill(); } }
-    else if (o.type === 'beam') { ctx.fillStyle = '#2a1f4a'; rr(o.x - o.w / 2, C.BEAM_BOT, o.w, 120, 5); ctx.fill(); ctx.fillStyle = t.top; ctx.fillRect(o.x - o.w / 2, C.BEAM_BOT, o.w, 5); }
+    else if (o.type === 'beam') { const bb = (o.base || 0) + C.BEAM_BOT;
+      ctx.fillStyle = t.block || '#2a1f4a'; rr(o.x - o.w / 2, bb, o.w, 120, 5); ctx.fill();
+      ctx.fillStyle = t.top; ctx.fillRect(o.x - o.w / 2, bb, o.w, 5); }
     else if (o.type === 'saw') drawSaw(o.x, o.r + 6, o.r, o.a + s.now * 5.5);
   }
   for (const m of s.entities.mines) drawSaw(m.x, m.y, 15, s.now * 7);
@@ -88,12 +382,29 @@ export function render(cv, s) {
       ctx.fillStyle = '#fff0a8'; ctx.beginPath(); ctx.ellipse(it.x, it.y, w * 0.45, 5, 0, 0, 6.284); ctx.fill();
     } else {
       if (s.crates.has(it.idx)) continue;
-      const bob = Math.sin(s.now * 2.4 + it.x * 0.01) * 5;
-      if (s.meItem < 0 && it.x > s.me.x - 60 && it.x < s.me.x + 420) {
-        ctx.globalAlpha = .22 + 0.14 * Math.sin(s.now * 6); ctx.fillStyle = '#ffc531';
-        ctx.beginPath(); ctx.arc(it.x, it.y + bob, 30, 0, 6.284); ctx.fill(); ctx.globalAlpha = 1;
+      // A crate hops in place and glows, always, so it reads as "take me"
+      // rather than as part of the scenery.
+      const cyc = ((s.now * 0.9 + it.x * 0.013) % 1);
+      const hop = cyc < 0.34 ? Math.sin(cyc / 0.34 * Math.PI) * 17 : 0;
+      const land = cyc < 0.34 ? 0 : Math.max(0, 1 - (cyc - 0.34) * 9);   // squash on landing
+      const want = s.meItem < 0;
+      const pulse = .18 + 0.12 * Math.sin(s.now * 5 + it.x);
+      ctx.globalAlpha = want ? pulse + .12 : pulse;
+      const gr = ctx.createRadialGradient(it.x, it.y + hop, 4, it.x, it.y + hop, 42);
+      gr.addColorStop(0, '#ffe9a8'); gr.addColorStop(1, 'rgba(255,197,49,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(it.x, it.y + hop, 42, 0, 6.284); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.globalAlpha = .2; ctx.fillStyle = '#000';     // its shadow on the ground
+      ctx.beginPath(); ctx.ellipse(it.x, it.y - 18, 15 - hop * 0.25, 4.5, 0, 0, 6.284); ctx.fill();
+      ctx.globalAlpha = 1;
+      if (want) {                                        // a little arrow while empty-handed
+        ctx.fillStyle = '#ffc531'; ctx.globalAlpha = .55 + .35 * Math.sin(s.now * 6);
+        const ay2 = it.y + hop + 40 + Math.sin(s.now * 4) * 3;
+        ctx.beginPath(); ctx.moveTo(it.x, ay2 - 9); ctx.lineTo(it.x - 7, ay2 + 5); ctx.lineTo(it.x + 7, ay2 + 5);
+        ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
       }
-      ctx.save(); ctx.translate(it.x, it.y + bob); ctx.rotate(Math.sin(s.now * 1.6) * 0.08);
+      ctx.save(); ctx.translate(it.x, it.y + hop); ctx.rotate(Math.sin(s.now * 1.6) * 0.08);
+      ctx.scale(1 + land * 0.18, 1 - land * 0.18);
       ctx.fillStyle = '#5e3a1b'; rr(-19, -19, 38, 38, 5); ctx.fill();
       ctx.fillStyle = '#a8702f'; rr(-15.5, -15.5, 31, 31, 3); ctx.fill();
       ctx.strokeStyle = '#c99354'; ctx.lineWidth = 4; ctx.lineCap = 'round';
@@ -130,11 +441,64 @@ export function render(cv, s) {
   }
   for (const p of s.parts) { ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 2.2)); ctx.fillStyle = p.col; ctx.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s); }
   ctx.globalAlpha = 1;
+  for (const t of (s.texts || [])) {             // world space is y-up: un-flip for text
+    const k = t.t / t.life;
+    ctx.save(); ctx.translate(t.x, t.y + 14 + k * 30); ctx.scale(1, -1);
+    ctx.globalAlpha = 1 - k * k;
+    ctx.font = '900 ' + (t.big ? 19 : 13) + 'px Nunito, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(12,8,22,0.85)'; ctx.strokeText(t.msg, 0, 0);
+    ctx.fillStyle = t.col; ctx.fillText(t.msg, 0, 0);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
 
   for (const r of s.racers) drawRunner(r, s);
 
-  // off-screen markers
+  // Name tags over every human, so you can tell who you just kicked into a pit.
+  for (const r of s.racers) {
+    if (r.bot || !r.name) continue;
+    const mine = s.me && r.id === s.me.id;
+    const ty = r.y + (mine ? 132 : 112);
+    ctx.save(); ctx.translate(r.x, ty); ctx.scale(1, -1);
+    ctx.font = '700 13px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(r.name).width + 12;
+    ctx.fillStyle = mine ? 'rgba(255,45,85,.82)' : 'rgba(0,0,0,.45)';
+    ctx.beginPath(); ctx.roundRect(-w / 2, -9, w, 18, 9); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(r.name, 0, 1);
+    ctx.restore();
+  }
+
+  if (s.me) {                                   // which one is you: a bare arrow, no halo
+    const bob = Math.sin(s.now * 4.5) * 4, ay = s.me.y + 102 + bob;
+    ctx.fillStyle = '#ff2d55'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(s.me.x, ay - 15); ctx.lineTo(s.me.x - 12, ay + 8); ctx.lineTo(s.me.x + 12, ay + 8);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+
+  // weather and lightning, in screen space over the top of everything
   screenT();
+  const wk = t.weather;
+  if (wk) drawWeather(wk, s.now, cam, Math.min(0.05, s.dt || 0.016), !!t.wind);
+  for (let i = bolts.length - 1; i >= 0; i--) {
+    const b = bolts[i]; b.t += (s.dt || 0.016);
+    const sx = b.x - cam;
+    if (b.warn && b.t < b.warn) {                        // the flicker of warning
+      if (sx > -60 && sx < VW + 60 && Math.floor(b.t * 22) % 2 === 0) {
+        ctx.fillStyle = '#ffffff'; ctx.globalAlpha = .25;
+        ctx.fillRect(sx - C.BOLT_R, 0, C.BOLT_R * 2, VH); ctx.globalAlpha = 1;
+      }
+    } else {
+      const age = b.t - (b.warn || 0);
+      if (age < 0.09) { ctx.fillStyle = '#ffffff'; ctx.globalAlpha = .55 * (1 - age / 0.09);
+        ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1; }
+      if (age < 0.3 && sx > -120 && sx < VW + 120)
+        drawBolt(sx, VH * 0.72 + 8, b.seed || 1, Math.max(0, 1 - age / 0.3));
+      if (age > 0.45) bolts.splice(i, 1);
+    }
+  }
+
+  // off-screen markers
   for (const r of s.racers) {
     if (r.id === s.me.id || r.done) continue;
     const sx = r.x - cam;
@@ -183,19 +547,25 @@ export function loadSprites(base) {
 function spriteFor(c) { const im = _imgs[c.id]; return im && im.complete ? im : null; }
 
 function drawSprite(c, im, o) {
-  const ar = im.width / im.height, ph = o.ph || 0, air = o.air;
-  let h = SPRITE_H, w = h * ar, lift = 0, rot = 0, sx = 1, sy = 1;
+  const R = c.run || { bob: 2.6, lean: .05, squash: .05, sway: 0, hover: 0, spin: 0, step: 1 };
+  // The stride phase drives legs, far too fast for a whole body to bounce at;
+  // a still sprite bobbing at that rate reads as a vibration, not a run.
+  const ar = im.width / im.height, ph = (o.ph || 0) * R.step * 0.4, air = o.air;
+  let h = SPRITE_H, w = h * ar, lift = 0, rot = 0, sx = 1, sy = 1, dx = 0;
   if (o.slide) { rot = -1.15; h *= 0.94; w = h * ar; lift = 10; }
-  else if (air) { rot = 0.1; }
+  else if (air) { rot = 0.1; lift = R.hover * 0.5; }
   else { const b = Math.abs(Math.sin(ph));
-    lift = b * 2.6; rot = Math.sin(ph) * 0.05; sy = 1 + b * 0.05; sx = 1 - b * 0.035; }
+    lift = b * R.bob + R.hover * (1 + 0.35 * Math.sin(ph * 0.6));
+    rot = Math.sin(ph) * R.lean + (R.spin ? Math.sin(ph * 0.5) * R.spin * 0.25 : 0);
+    sy = 1 + b * R.squash; sx = 1 - b * R.squash * 0.7;
+    dx = Math.sin(ph * 0.5) * R.sway; }
   if (o.atk > 0 && !o.atkKind) rot += 0.12 * Math.sin(Math.min(1, o.atk) * Math.PI);
   ctx.save();
-  ctx.translate(0, lift); ctx.rotate(rot); ctx.scale(sx, sy);
+  ctx.translate(dx, lift); ctx.rotate(rot); ctx.scale(sx, sy);
   ctx.scale(1, -1);                       // world space is y-up; images are not
   ctx.drawImage(im, -w * 0.5, -h, w, h);
   ctx.restore();
-  if (!air && !o.slide) {
+  if (!air && !o.slide && !(R.hover > 2)) {
     ctx.globalAlpha = .45; ctx.fillStyle = '#ffffff';
     for (let i = 0; i < 3; i++) { const p = ((ph * 0.16 + i * 0.33) % 1);
       ctx.beginPath(); ctx.arc(-6 - p * 24, 2 + p * 6, 1.8 + p * 4.5, 0, 6.284); ctx.fill(); }
@@ -214,8 +584,25 @@ function drawRunner(r, s) {
   const pose = { ph: r.phase, air: !r.onGround, slide: r.sliding, stunned: r.stun > 0, hit: false,
     eyeShut: false, jet: r.jet > 0, atk: r.atk > 0 ? 1 - r.atk / C.ATK_DUR : 0, atkKind: r.atkKind };
   const im = spriteFor(c);
+  // Struck by lightning: burnt black as coal, with smoke coming off, until it
+  // wears off a second and a half later.
+  const burnt = (r.charred || 0) > 0;
+  if (burnt) {
+    const fade = Math.min(1, r.charred / 0.35);             // ease back to normal
+    ctx.filter = `brightness(${(1 - 0.92 * fade).toFixed(2)}) contrast(1.5) saturate(${(1 - fade).toFixed(2)})`;
+  }
   if (im) drawSprite(c, im, pose); else paintChar(c, pose);
+  ctx.filter = 'none';
   ctx.restore();
+  if (burnt) {
+    ctx.globalAlpha = .4;
+    for (let i = 0; i < 3; i++) {
+      const a = s.now * 2.2 + i * 2.1, py = r.y + 58 + ((s.now * 46 + i * 24) % 42);
+      ctx.fillStyle = '#9aa3ad';
+      ctx.beginPath(); ctx.arc(r.x + Math.sin(a) * 9, py, 5 + i * 1.6, 0, 6.284); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
   if (r.shield > 0) { ctx.globalAlpha = .28 + 0.16 * Math.sin(s.now * 8); ctx.fillStyle = '#3fb6f5';
     ctx.beginPath(); ctx.arc(r.x, r.y + 27, 33, 0, 6.284); ctx.fill(); ctx.globalAlpha = .9;
     ctx.strokeStyle = '#8bdcff'; ctx.lineWidth = 2.4; ctx.stroke(); ctx.globalAlpha = 1; }

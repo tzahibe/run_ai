@@ -24,8 +24,28 @@ h1{font-family:var(--display);font-size:clamp(17px,3vw,24px);margin:0;letter-spa
  border:1px solid var(--edge);box-shadow:inset 0 0 44px #0009}
 canvas{display:block;width:100%;height:100%}
 .hud{position:absolute;inset:0;pointer-events:none;font-weight:800}
-.place{position:absolute;top:8px;right:12px;font-family:var(--display);font-size:clamp(16px,2.6vw,24px);text-shadow:0 3px 0 #0007;text-align:right}
-.place small{font-size:.5em;display:block;font-family:var(--body);font-variant-numeric:tabular-nums}
+.topright{position:absolute;top:8px;right:12px;text-align:right}
+.place{font-family:var(--display);font-size:clamp(16px,2.6vw,24px);line-height:1;text-shadow:0 3px 0 #0007}
+.place small{font-size:.5em;display:block;margin-top:5px;line-height:1.2;font-family:var(--body);font-variant-numeric:tabular-nums}
+.rival{margin-top:6px;display:inline-block;padding:3px 8px;border-radius:9px;
+  background:rgba(8,14,22,.5);font-size:12px;font-weight:900;
+  font-variant-numeric:tabular-nums;color:#fff;text-shadow:0 2px 0 #0008;line-height:1.35}
+.rival i{font-style:normal;font-size:11px;color:var(--muted);display:block}
+.rival .ahead{color:#ff8a8a}
+.rival .behind{color:#8ce7b0}
+.turbo{position:absolute;top:44px;left:50%;transform:translateX(-50%);text-align:center;
+  background:rgba(8,14,22,.55);border:1px solid rgba(124,230,255,.35);border-radius:14px;
+  padding:6px 16px 8px;backdrop-filter:blur(6px);pointer-events:none;min-width:150px}
+.turbo b{display:block;font-size:30px;font-weight:900;line-height:1;color:#ffc531;
+  text-shadow:0 2px 0 #0009;font-variant-numeric:tabular-nums}
+.turbo span{display:block;font-size:11px;font-weight:800;letter-spacing:.12em;
+  text-transform:uppercase;color:#cfe9f5;margin-top:3px}
+.turbo .tbar{height:5px;border-radius:3px;background:rgba(255,255,255,.16);margin-top:6px;overflow:hidden}
+.turbo .tbar i{display:block;height:100%;width:0;border-radius:3px;
+  background:linear-gradient(90deg,#7ce6ff,#ffc531);transition:width .18s ease}
+.turbo.hot{border-color:#ff8c42;animation:turboPop .5s ease}
+.turbo.hot b{color:#ff8c42}
+@keyframes turboPop{0%{transform:translateX(-50%) scale(1)}40%{transform:translateX(-50%) scale(1.14)}100%{transform:translateX(-50%) scale(1)}}
 .slot{position:absolute;left:12px;top:10px;width:54px;height:54px;border-radius:14px;background:#120c2299;
  border:2px dashed #ffffff35;display:grid;place-items:center;font-size:10px;text-align:center;line-height:1.1;padding:3px}
 .slot.full{border-style:solid;animation:glow 1.05s ease-in-out infinite}
@@ -303,7 +323,11 @@ body:not(.racing) .escnote{display:none}
         <canvas id="game"></canvas>
         <div class="hud" id="hud" hidden>
           <div class="slot" id="slot">item</div>
-          <div class="place" id="place">1<small>0:00.00</small></div>
+          <div class="topright">
+            <div class="place" id="place">1<small>0:00.00</small></div>
+            <div class="rival" id="rival"></div>
+          </div>
+          <div class="turbo" id="turbo"><b id="turboN">12</b><span>to turbo</span><div class="tbar"><i id="turboBar"></i></div></div>
           <div class="lap" id="lap"></div>
           <div class="toast" id="toast"></div>
         </div>
