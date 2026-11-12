@@ -8,6 +8,8 @@ to be the one who crosses first.
 
 <img src="docs/img/frost.png" width="800" alt="Frostpeak: snowy pines, drifting snow and a lightning strike">
 
+<img src="client/sprites/hog.png" width="88"> <img src="client/sprites/lion.png" width="88"> <img src="client/sprites/fox.png" width="88"> <img src="client/sprites/drag.png" width="88"> <img src="client/sprites/bun.png" width="88"> <img src="client/sprites/rhino.png" width="88">
+
 </div>
 
 ---
@@ -51,14 +53,19 @@ feel alike, and never the same piece twice in a row:
 | **Conveyors** | The floor moves — with you, or against you. Sewer only. |
 ## The racers
 
-Ten characters, each with its own run style and its own signature attack.
+Ten of them, each with its own run style and its own signature attack.
 
-<div align="center"><img src="docs/img/chars.png" width="760" alt="The ten racers"></div>
+| | | | | |
+|:--:|:--:|:--:|:--:|:--:|
+| <img src="client/sprites/hog.png" width="104"><br>**Blitz**<br><sub>low and fast · Spin dash</sub> | <img src="client/sprites/lion.png" width="104"><br>**Rex**<br><sub>heavy stride · Claw swipe</sub> | <img src="client/sprites/fox.png" width="104"><br>**Pixel**<br><sub>quick steps · Tail whip</sub> | <img src="client/sprites/wolf.png" width="104"><br>**Frost**<br><sub>loping · Bite</sub> | <img src="client/sprites/tiger.png" width="104"><br>**Fang**<br><sub>bounding · Double slash</sub> |
+| <img src="client/sprites/shark.png" width="104"><br>**Reef**<br><sub>glides · Chomp</sub> | <img src="client/sprites/drag.png" width="104"><br>**Draco**<br><sub>hovers · Wing buffet</sub> | <img src="client/sprites/panda.png" width="104"><br>**Bamboo**<br><sub>lumbers · Belly bump</sub> | <img src="client/sprites/bun.png" width="104"><br>**Blossom**<br><sub>bouncy · Spin kick</sub> | <img src="client/sprites/rhino.png" width="104"><br>**Tank**<br><sub>pounds along · Horn charge</sub> |
 
-A run style is a handful of numbers — bounce, lean, squash, sway, hover, spin — so
-Blitz skims the ground, Draco hovers, and Tank pounds along. An attack is another
-handful — reach, knockback, stun, pop — so Tank's charge throws people and Pixel's
-jab is quick and cheap.
+A run style is a handful of numbers — bounce, lean, squash, sway, hover, spin —
+so Blitz skims the ground, Draco hovers and Tank pounds along. An attack is
+another handful — reach, knockback, stun, pop, and what it costs you in speed —
+so Tank's charge throws people and Pixel's jab is quick and cheap.
+
+<div align="center"><img src="docs/img/chars.png" width="720" alt="Picking a racer"></div>
 
 ## Coins mean something
 
