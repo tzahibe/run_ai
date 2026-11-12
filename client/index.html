@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Turbo Dash — Netcode</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:wght@400;700;900&display=swap">
+<style>
+:root{--cab:#241a3d;--deep:#140e26;--bezel:#120c22;--edge:#43307090;--hot:#ff3d7f;--sun:#ffc531;
+ --mint:#2ee6a8;--sky:#3fb6f5;--cream:#fdf6ec;--muted:#b6a8d4;--display:"Bungee",Impact,sans-serif;
+ --body:"Nunito",system-ui,sans-serif;color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:radial-gradient(1000px 540px at 50% -14%,#3d2769,transparent 62%),var(--deep);
+ color:var(--cream);font-family:var(--body);display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px}
+h1{font-family:var(--display);font-size:clamp(17px,3vw,24px);margin:0;letter-spacing:.5px;
+ background:linear-gradient(92deg,var(--sun),var(--hot) 55%,var(--sky));-webkit-background-clip:text;background-clip:text;color:transparent}
+.bar{width:100%;max-width:1180px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.pill{font-size:11px;font-weight:900;padding:3px 9px;border-radius:99px;background:#ffffff14;border:1px solid var(--edge)}
+.pill.on{background:#2ee6a826;border-color:#2ee6a8;color:var(--mint)}
+.pill.off{background:#ff3d7f22;border-color:var(--hot);color:var(--hot)}
+.wrap{width:100%;max-width:1180px;display:grid;grid-template-columns:1fr 290px;gap:10px}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}}
+.screen{position:relative;width:100%;aspect-ratio:16/9;background:var(--bezel);border-radius:12px;overflow:hidden;
+ border:1px solid var(--edge);box-shadow:inset 0 0 44px #0009}
+canvas{display:block;width:100%;height:100%}
+.hud{position:absolute;inset:0;pointer-events:none;font-weight:800}
+.place{position:absolute;top:8px;right:12px;font-family:var(--display);font-size:clamp(16px,2.6vw,24px);text-shadow:0 3px 0 #0007;text-align:right}
+.place small{font-size:.5em;display:block;font-family:var(--body);font-variant-numeric:tabular-nums}
+.slot{position:absolute;left:12px;top:10px;width:54px;height:54px;border-radius:14px;background:#120c2299;
+ border:2px dashed #ffffff35;display:grid;place-items:center;font-size:10px;text-align:center;line-height:1.1;padding:3px}
+.slot.full{border-style:solid;animation:glow 1.05s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 10px 1px var(--it,#fff)}50%{box-shadow:0 0 26px 7px var(--it,#fff)}}
+.lap{position:absolute;left:50%;transform:translateX(-50%);top:12px;width:min(42%,340px);height:8px;border-radius:99px;background:#0b0718aa;border:1px solid #ffffff2e}
+.lap i{position:absolute;top:-3px;width:12px;height:12px;border-radius:50%;border:2px solid #15102aa0;transform:translateX(-50%)}
+.toast{position:absolute;left:50%;bottom:14%;transform:translateX(-50%);font-family:var(--display);font-size:14px;opacity:0;transition:opacity .2s;text-shadow:0 3px 0 #0008}
+.toast.on{opacity:1}
+.count{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);font-size:clamp(44px,10vw,92px);color:var(--sun);text-shadow:0 7px 0 #0007}
+.panel{background:#1c142fb0;border:1px solid var(--edge);border-radius:12px;padding:11px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.panel h2{font-family:var(--display);font-size:12px;margin:0;letter-spacing:.06em;color:var(--muted)}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
+.row b{font-weight:900}
+.k{color:var(--muted)}
+label{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--sun)}
+input[type=text]{width:100%;background:#120c22;border:1px solid var(--edge);color:var(--cream);border-radius:8px;padding:6px 8px;font:inherit;font-size:13px}
+.btn{appearance:none;border:0;cursor:pointer;font-family:var(--display);font-size:13px;letter-spacing:.5px;padding:9px 14px;border-radius:11px;
+ color:#20143a;background:linear-gradient(180deg,var(--sun),#f09d1b);box-shadow:0 4px 0 #a9660c}
+.btn:active{transform:translateY(2px);box-shadow:0 2px 0 #a9660c}
+.btn.ghost{background:#ffffff14;color:var(--cream);box-shadow:0 4px 0 #ffffff14}
+.btn[disabled]{opacity:.5;cursor:default}
+.chips{display:flex;gap:5px;flex-wrap:wrap}
+.chip{appearance:none;cursor:pointer;font:inherit;font-size:11px;font-weight:900;padding:4px 8px;border-radius:8px;
+ background:#1b1334;color:var(--cream);border:2px solid #ffffff22}
+.chip[aria-pressed=true]{border-color:var(--sun);background:#2d2150}
+.log{font-size:10.5px;font-family:ui-monospace,Menlo,monospace;color:var(--muted);max-height:120px;overflow:auto;
+ background:#0e0a1c;border-radius:8px;padding:6px;white-space:pre-wrap;line-height:1.45}
+table.res{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+table.res td,table.res th{padding:4px 6px;border-top:1px solid #ffffff1a;text-align:left}
+table.res th{color:var(--muted);font-size:10px;text-transform:uppercase}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;vertical-align:-1px;margin-left:4px}
+.hint{font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Turbo Dash — authoritative netcode</h1>
+  <div class="chips">
+    <span class="pill" id="connPill">connecting…</span>
+    <span class="pill" id="statePill">lobby</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <div>
+    <div class="screen">
+      <canvas id="game"></canvas>
+      <div class="hud" id="hud" hidden>
+        <div class="slot" id="slot">item</div>
+        <div class="place" id="place">1<small>0:00.00</small></div>
+        <div class="lap" id="lap"></div>
+        <div class="toast" id="toast"></div>
+      </div>
+      <div class="count" id="count" hidden>3</div>
+    </div>
+    <div class="hint" style="margin-top:6px">Space / ↑ jump · ↓ slide · E use item · F punch or kick — open a second browser tab to race yourself.</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+    <div class="panel" id="lobby">
+      <h2>Player</h2>
+      <input type="text" id="name" maxlength="16" placeholder="name">
+      <div class="chips" id="charPick"></div>
+      <h2>Track</h2>
+      <div class="chips" id="trackPick"></div>
+      <button class="btn" id="play">Find match</button>
+      <div class="hint" id="queueInfo"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Link conditions (this tab)</h2>
+      <label>round trip <span id="vRtt">0 ms</span></label>
+      <input type="range" id="rtt" min="0" max="400" step="10" value="0">
+      <label>jitter <span id="vJit">0 ms</span></label>
+      <input type="range" id="jit" min="0" max="150" step="5" value="0">
+      <label>packet loss <span id="vLoss">0 %</span></label>
+      <input type="range" id="loss" min="0" max="25" step="0.5" value="0">
+      <div class="chips">
+        <button class="chip" data-preset="0,0,0">LAN</button>
+        <button class="chip" data-preset="60,15,0.5">Good 4G</button>
+        <button class="chip" data-preset="140,40,2">Mobile</button>
+        <button class="chip" data-preset="280,90,8">Awful</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Netcode telemetry</h2>
+      <div class="row"><span class="k">measured RTT</span><b id="sRtt">—</b></div>
+      <div class="row"><span class="k">jitter spread</span><b id="sJit">—</b></div>
+      <div class="row"><span class="k">snapshots / s</span><b id="sSnap">—</b></div>
+      <div class="row"><span class="k">lost / reordered</span><b id="sDrop">—</b></div>
+      <div class="row"><span class="k">unacked inputs</span><b id="sPend">—</b></div>
+      <div class="row"><span class="k">server input buffer</span><b id="sBuf">—</b></div>
+      <div class="row"><span class="k">replayed / snapshot</span><b id="sReplay">—</b></div>
+      <div class="row"><span class="k">correction</span><b id="sCorr">—</b></div>
+      <div class="row"><span class="k">downstream</span><b id="sKbps">—</b></div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>

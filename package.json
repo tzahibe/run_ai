@@ -1,0 +1,14 @@
+{
+  "name": "turbo-dash-netcode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Authoritative-server multiplayer prototype for Turbo Dash Royale",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js --rtt 80 --jitter 25 --loss 1.5",
+    "bad": "node server/index.js --rtt 220 --jitter 70 --loss 6"
+  },
+  "dependencies": { "ws": "^8.18.0" },
+  "engines": { "node": ">=20" }
+}
